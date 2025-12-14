@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "psu-consumption-monitor")(type "KiCad")(uri "${KIPRJMOD}/psu-consumption-monitor.kicad_sym")(options "")(descr ""))
+)

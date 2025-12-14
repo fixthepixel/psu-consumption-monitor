@@ -1,0 +1,9 @@
+# KiCad cache / local files
+fp-info-cache
+*.kicad_prl
+*-cache.lib
+*-rescue.kicad_sym
+
+# OS junk
+.DS_Store
+Thumbs.db
