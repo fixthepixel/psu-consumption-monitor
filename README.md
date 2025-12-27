@@ -39,13 +39,9 @@ Total system power can be derived by summing all monitored rails.
 ## 🧰 Tools & Requirements
 
 ### Hardware / CAD
+
 - **KiCad 9.x** (tested)
 - Standard KiCad libraries (symbols, footprints, 3D models)
-
-### Firmware
-- **MicroPython**
-- Supported MCUs depend on firmware implementation
-  (RP2040 / ESP32 recommended)
 
 ---
 
@@ -70,6 +66,31 @@ See `gerber/README.md` for fabrication-specific notes and licensing.
 ## 🔌 Firmware
 
 The `/firmware` directory contains MicroPython firmware for the monitor.
+
+### Firmware Installation Guide
+
+1.  **Board**
+   
+    MicroPython firmware must be installed on the target board (RP2040).
+
+2.  **Installation**
+   
+    Copy all `*.py` files from `/firmware` directory into the root directory of the MicroPython device.
+
+3.  **Third-party dependencies**
+   
+    The firmware depends on the ILI9341 display driver and font files from:
+
+    - `https://github.com/jeffmer/micropython-ili9341`
+
+    Required files:
+      - ili934xnew.py
+      - glcdfont.py
+      - tt14.py
+      - tt24.py
+
+    These files are used unmodified and retain their original MIT license.
+    They must also be copied to the root directory of the MicroPython device.
 
 ---
 
