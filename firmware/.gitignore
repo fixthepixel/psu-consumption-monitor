@@ -1,0 +1,8 @@
+# Ignore everything
+*
+
+# But not these files...
+!.gitignore
+!main.py
+!ina3221.py
+
