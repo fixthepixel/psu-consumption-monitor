@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @import url('https://cdn.jsdelivr.net/npm/dseg@0.46.0/css/dseg.min.css');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: transparent;
+    display: inline-block;
+    font-family: 'DSEG7 Classic', monospace;
+  }
+
+  #panel {
+    background: rgba(0, 0, 0, 0.75);
+    padding: 3px 6px 4px;
+    display: inline-block;
+    zoom: 2.5;
+  }
+
+  .row {
+    display: flex;
+    align-items: baseline;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+
+  .lbl {
+    font-size: 18px;
+    color: #00d8d8;
+    width: 90px;
+    flex-shrink: 0;
+  }
+
+  .val {
+    font-size: 18px;
+    color: #fbff2c;
+    min-width: 50px;
+    text-align: right;
+  }
+
+  .unit {
+    font-size: 14px;
+    color: #ffffff;
+    margin-right: 7px;
+    align-self: flex-end;
+    padding-bottom: 1px;
+  }
+
+  .val.warn  { color: #ffaa00; }
+  .val.alert { color: #ff3030; }
+
+  .row.total .lbl { color: #00d8d8; width: 100px; }
+  .row.total .val { font-family: 'DSEG7 Classic', monospace; font-size: 28px; color: #a8b5ff; min-width: 70px; }
+  .row.total .val.watts { color: #c98b0e; }
+  .row.total .unit { color: #ffffff; font-size: 14px; }
+
+  .divider {
+    border-top: 1px solid #1a1a1a;
+    margin: 1px 0;
+  }
+
+  #graph-wrap {
+    margin-top: 2px;
+    position: relative;
+  }
+
+  #graph-label {
+    font-family: 'DSEG14 Classic', monospace;
+    font-size: 9px;
+    color: #00ff00;
+    margin-bottom: 1px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  #graph-label span { color: #00ff00; }
+
+  canvas {
+    display: block;
+  }
+
+  html, body {
+    background: transparent !important;
+  }
+</style>
+</head>
+<body>
+<div id="panel">
+  <div id="rows"></div>
+  <div class="divider"></div>
+  <div id="graph-wrap">
+    <div id="graph-label">Total @12V <span id="g-val">-</span></div>
+    <canvas id="gc" height="40"></canvas>
+  </div>
+</div>
+
+<script>
+const DATA_URL = "http://127.0.0.1:5757/data";
+const POLL_MS  = 150;
+const HISTORY  = 180;
+
+const RAILS = [
+  { key: "12v",     label: "12V",     nom: 12,  warnPct: 0.05, alertPct: 0.08 },
+  { key: "12v_cpu", label: "12V CPU", nom: 12,  warnPct: 0.05, alertPct: 0.08 },
+  { key: "5v",      label: "5V",      nom: 5,   warnPct: 0.05, alertPct: 0.08 },
+  { key: "5vsb",    label: "5VSB",    nom: 5,   warnPct: 0.05, alertPct: 0.08 },
+  { key: "3v3",     label: "3.3V",    nom: 3.3, warnPct: 0.05, alertPct: 0.08 },
+];
+
+// Build rows
+const rowsEl = document.getElementById("rows");
+const refs = {};
+
+function makeRow(key, labelText, isTotal) {
+  const row = document.createElement("div");
+  row.className = isTotal ? "row total" : "row";
+
+  const lbl = document.createElement("span");
+  lbl.className = "lbl";
+  lbl.textContent = labelText;
+
+  const vVal = document.createElement("span"); vVal.className = "val";  vVal.textContent = "-";
+  const vUnit = document.createElement("span"); vUnit.className = "unit"; vUnit.textContent = "V";
+  const iVal = document.createElement("span"); iVal.className = "val";  iVal.textContent = "-";
+  const iUnit = document.createElement("span"); iUnit.className = "unit"; iUnit.textContent = "A";
+  const pVal = document.createElement("span"); pVal.className = isTotal ? "val watts" : "val";  pVal.textContent = "-";
+  const pUnit = document.createElement("span"); pUnit.className = "unit"; pUnit.textContent = "W";
+
+  if (isTotal) {
+    row.append(lbl, iVal, iUnit, pVal, pUnit);
+  } else {
+    row.append(lbl, vVal, vUnit, iVal, iUnit, pVal, pUnit);
+  }
+
+  rowsEl.appendChild(row);
+  refs[key] = { vVal, iVal, pVal, row };
+}
+
+RAILS.forEach(r => makeRow(r.key, r.label, false));
+const div = document.createElement("div"); div.className = "divider"; rowsEl.appendChild(div);
+makeRow("total", "TOTAL", true);
+
+// Size canvas to panel width after DOM ready
+const gc = document.getElementById("gc");
+const ctx = gc.getContext("2d");
+const history = [];
+let peak = 1;
+
+function resizeCanvas() {
+  gc.width = document.getElementById("panel").offsetWidth - 16;
+}
+
+// Threshold
+const nomMap = {};
+RAILS.forEach(r => nomMap[r.key] = r);
+
+function thresh(el, val, key) {
+  const r = nomMap[key];
+  if (!r) return;
+  el.classList.remove("warn", "alert");
+  const dev = Math.abs(val - r.nom) / r.nom;
+  if      (dev >= r.alertPct) el.classList.add("alert");
+  else if (dev >= r.warnPct)  el.classList.add("warn");
+}
+
+// Draw graph — thin hairline like RTSS
+function drawGraph() {
+  const W = gc.width, H = gc.height;
+  ctx.clearRect(0, 0, W, H);
+  if (history.length < 2) return;
+
+  const maxVal = Math.max(peak * 1.1, 1);
+  const pad = 2;
+
+  ctx.beginPath();
+  history.forEach((v, i) => {
+    const x = (i / (HISTORY - 1)) * W;
+    const y = H - pad - (v / maxVal) * (H - pad * 2);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = "#00ff00";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // current value dot
+  const last = history[history.length - 1];
+  const lx = ((history.length - 1) / (HISTORY - 1)) * W;
+  const ly = H - pad - (last / maxVal) * (H - pad * 2);
+  ctx.beginPath();
+  ctx.arc(lx, ly, 1.5, 0, Math.PI * 2);
+  ctx.fillStyle = "#aaa";
+  ctx.fill();
+}
+
+async function poll() {
+  try {
+    const res  = await fetch(DATA_URL, { cache: "no-store" });
+    const data = await res.json();
+
+    RAILS.forEach(r => {
+      const d = data[r.key];
+      const ref = refs[r.key];
+      if (!d) return;
+      if (d.bus_voltage !== undefined) {
+        const v = parseFloat(d.bus_voltage);
+        ref.vVal.textContent = v.toFixed(2);
+        thresh(ref.vVal, v, r.key);
+      }
+      if (d.current !== undefined) ref.iVal.textContent = parseFloat(d.current).toFixed(2);
+      if (d.power   !== undefined) ref.pVal.textContent = parseFloat(d.power).toFixed(1);
+    });
+
+    const tot = data["total"];
+    if (tot) {
+      const p = parseFloat(tot.power);
+      const i12 = p / 12;
+      refs["total"].iVal.textContent = i12.toFixed(2);
+      refs["total"].pVal.textContent = p.toFixed(1);
+
+      history.push(i12);
+      if (history.length > HISTORY) history.shift();
+      if (i12 > peak) peak = i12;
+
+      document.getElementById("g-val").textContent = i12.toFixed(2) + " A";
+      drawGraph();
+    }
+  } catch(e) {}
+}
+
+window.addEventListener("load", () => {
+  resizeCanvas();
+  setInterval(poll, POLL_MS);
+  poll();
+});
+</script>
+</body>
+</html>
