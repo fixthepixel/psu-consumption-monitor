@@ -68,12 +68,5 @@ class INA3221:
                 "current": current,
                 "power": power,
             })
-            
-            print(
-                f"CH{ch}: "
-                f"Bus = {bus:6.3f} V | "
-                f"Shunt = {shunt*1e3:7.3f} mV | "
-                f"I = {current:6.3f} A | "
-                f"P = {power:6.3f} W | "
-            )
+        
         return readings
